@@ -325,4 +325,295 @@ with st.expander(
     )
 
     disponible_deudas = (
-        ingreso_neto )
+        ingreso_neto - gastos_totales_calculados - colchon_emergencia
+    )
+
+  with col_resultados:
+    st.write("#### 2. Balance y Recomendación Automática")
+    st.info(f"""
+        * **Ingreso Neto (Nómina):** `${ingreso_neto:,.2f}`
+        * **(-) Gastos Indispensables:** `${gastos_totales_calculados:,.2f}`
+        * **(-) Colchón de Emergencia:** `${colchon_emergencia:,.2f}`
+        """)
+
+    if disponible_deudas < 0:
+      st.error(
+          f"⚠️ **Atención:** Tus gastos y colchón"
+          f" (${gastos_totales_calculados + colchon_emergencia:,.2f}) superan tu"
+          f" nómina de esta catorcena (${ingreso_neto:,.2f})."
+      )
+      st.warning(
+          "👉 **Recomendación:** Modo Supervivencia activado. No abonar a"
+          " deudas esta catorcena."
+      )
+    elif disponible_deudas == 0:
+      st.warning(
+          "ℹ️ Saldo exacto para cubrir tus gastos fijos. Asignación sugerida a"
+          " deudas: **$0.00**."
+      )
+    else:
+      st.success(
+          f"💡 **Monto Neto Disponible para Deudas:** `${disponible_deudas:,.2f}"
+          " MXN`"
+      )
+      st.write("**Estrategia Sugerida (Bola de Nieve):**")
+
+      if not df_resumen.empty:
+        deudas_pendientes = df_resumen[df_resumen["Saldo_Num"] > 0].sort_values(
+            by="Saldo_Num", ascending=True
+        )
+
+        if not deudas_pendientes.empty:
+          sugerencias = []
+          monto_restante_distribuir = disponible_deudas
+
+          for _, d in deudas_pendientes.iterrows():
+            if monto_restante_distribuir <= 0:
+              break
+
+            saldo_deuda = d["Saldo_Num"]
+            acreedor_nom = d["Acreedor"]
+
+            if monto_restante_distribuir >= saldo_deuda:
+              abono_sugerido = saldo_deuda
+              nota_sug = "🎯 ¡LIQUIDA LA DEUDA COMPLETA!"
+            else:
+              abono_sugerido = monto_restante_distribuir
+              nota_sug = "📉 Abono directo a capital"
+
+            sugerencias.append({
+                "Acreedor": acreedor_nom,
+                "Abono Sugerido": f"${abono_sugerido:,.2f}",
+                "Notas": nota_sug,
+            })
+            monto_restante_distribuir -= abono_sugerido
+
+          st.table(pd.DataFrame(sugerencias))
+        else:
+          st.balloons()
+          st.success("¡Excelente! No hay deudas pendientes por liquidar.")
+
+st.markdown("---")
+
+# --- ADMINISTRACIÓN DE ACREEDORES ---
+with st.expander("➕ / ⚙️ Registrar o Administrar Acreedores (Deudas)"):
+  col_nueva_deuda, col_lista_deudas = st.columns([1, 1.2])
+
+  with col_nueva_deuda:
+    st.write("#### Agregar Nueva Deuda")
+    with st.form("form_nueva_deuda", clear_on_submit=True):
+      nuevo_nombre = st.text_input(
+          "Nombre / Emisor de la Deuda",
+          placeholder="Ej: Liverpool, Banamex, etc.",
+      )
+      nuevo_monto = st.number_input(
+          "Monto Inicial de la Deuda ($)", min_value=1.0, step=500.0
+      )
+      btn_guardar_deuda = st.form_submit_button("Añadir Deuda")
+
+      if btn_guardar_deuda:
+        if nuevo_nombre.strip() == "":
+          st.error("Ingresa un nombre válido para el acreedor.")
+        else:
+          try:
+            cursor.execute(
+                "INSERT INTO acreedores (nombre, monto_inicial) VALUES (%s,"
+                " %s)",
+                (nuevo_nombre.strip(), nuevo_monto),
+            )
+            conn.commit()
+            st.success(
+                f"¡Deuda '{nuevo_nombre.strip()}' por ${nuevo_monto:,.2f}"
+                " añadida!"
+            )
+            st.rerun()
+          except psycopg2.IntegrityError:
+            conn.rollback()
+            st.error(
+                "Ya existe un acreedor con el nombre"
+                f" '{nuevo_nombre.strip()}'."
+            )
+
+  with col_lista_deudas:
+    # --- EDITAR SALDO ACTUAL DE UNA DEUDA ---
+    st.write("#### ✏️ Editar Saldo Actual de una Deuda")
+    if not df_acreedores.empty:
+      acreedor_a_editar = st.selectbox(
+          "Selecciona la deuda a editar:",
+          df_acreedores["nombre"].tolist(),
+          key="select_editar_acreedor",
+      )
+
+      abonado_editar = (
+          float(
+              df_abonos[df_abonos["acreedor_nombre"] == acreedor_a_editar][
+                  "monto"
+              ].sum()
+          )
+          if not df_abonos.empty
+          else 0.0
+      )
+      inicial_editar = float(
+          df_acreedores[df_acreedores["nombre"] == acreedor_a_editar][
+              "monto_inicial"
+          ].iloc[0]
+      )
+      saldo_actual_editar = max(inicial_editar - abonado_editar, 0.0)
+
+      st.caption(
+          f"Saldo actual registrado: **${saldo_actual_editar:,.2f}** "
+          f"(abonado hasta ahora: ${abonado_editar:,.2f})"
+      )
+
+      with st.form("form_editar_deuda"):
+        nuevo_saldo = st.number_input(
+            "Nuevo saldo actual de la deuda ($)",
+            min_value=0.0,
+            value=float(saldo_actual_editar),
+            step=100.0,
+            key=f"nuevo_saldo_{acreedor_a_editar}_{saldo_actual_editar}",
+            help=(
+                "Este será el saldo pendiente real, sin importar cuánto se haya"
+                " abonado antes."
+            ),
+        )
+        btn_editar_deuda = st.form_submit_button("💾 Actualizar Saldo")
+
+        if btn_editar_deuda:
+          nuevo_monto_inicial = round(float(nuevo_saldo) + abonado_editar, 2)
+          cursor.execute(
+              "UPDATE acreedores SET monto_inicial = %s WHERE nombre = %s",
+              (nuevo_monto_inicial, acreedor_a_editar),
+          )
+          conn.commit()
+          st.success(
+              f"Saldo de '{acreedor_a_editar}' actualizado a"
+              f" ${nuevo_saldo:,.2f}."
+          )
+          st.rerun()
+    else:
+      st.info("Aún no hay deudas registradas para editar.")
+
+    st.write("---")
+    st.write("#### Eliminar Deuda Existente")
+    if not df_acreedores.empty:
+      acreedor_a_borrar = st.selectbox(
+          "Selecciona la deuda a eliminar:",
+          df_acreedores["nombre"].tolist(),
+          key="select_borrar_acreedor",
+      )
+      st.caption(
+          "⚠️ Al borrar una deuda también se eliminan sus abonos. Los"
+          " movimientos ya descontados en tus cuentas se conservan."
+      )
+      if st.button("🗑️ Eliminar Deuda Seleccionada", type="primary"):
+        try:
+          cursor.execute(
+              """
+                        UPDATE transacciones SET abono_id = NULL
+                        WHERE abono_id IN (SELECT id FROM abonos WHERE acreedor_nombre = %s)
+                        """,
+              (acreedor_a_borrar,),
+          )
+          cursor.execute(
+              "DELETE FROM acreedores WHERE nombre = %s", (acreedor_a_borrar,)
+          )
+          cursor.execute(
+              "DELETE FROM abonos WHERE acreedor_nombre = %s",
+              (acreedor_a_borrar,),
+          )
+          conn.commit()
+        except Exception as e:
+          conn.rollback()
+          st.error(f"No se pudo eliminar la deuda: {e}")
+        else:
+          st.success(f"Deuda '{acreedor_a_borrar}' eliminada.")
+          st.rerun()
+
+st.markdown("---")
+
+# --- REGISTRO Y HISTORIAL DE ABONOS ---
+col_form, col_historial = st.columns([1, 1.3])
+
+with col_form:
+  st.subheader("📝 Registrar Nuevo Abono")
+  if df_cuentas.empty:
+    st.caption(
+        "💡 Aún no tienes cuentas. Créalas en **Mis Cuentas** para descontar tus"
+        " abonos automáticamente."
+    )
+
+  with st.form("form_abono", clear_on_submit=True):
+    fecha = st.date_input("Fecha de pago")
+    catorcena = st.text_input("Catorcena / Periodo", value="25 de Septiembre")
+    acreedor = st.selectbox(
+        "Acreedor",
+        (
+            df_acreedores["nombre"].tolist()
+            if not df_acreedores.empty
+            else ["Sin Acreedores"]
+        ),
+    )
+    monto = st.number_input("Monto a abonar ($)", min_value=1.0, step=50.0)
+    cuenta_sel = st.selectbox(
+        "Cuenta de origen (de dónde sale el dinero)",
+        opciones_cuenta,
+        format_func=fmt_cuenta,
+        help=(
+            "Se descontará de esa cuenta y quedará registrado como"
+            " transacción."
+        ),
+    )
+    origen = st.selectbox("Origen del dinero", ORIGENES)
+    notas = st.text_input("Notas adicionales", value="")
+
+    btn_guardar = st.form_submit_button("Guardar Abono")
+
+    if btn_guardar:
+      if df_acreedores.empty:
+        st.error("No hay acreedores registrados. Añade uno primero.")
+      elif cuenta_sel is not None and round(monto, 2) > round(
+          saldo_de_cuenta(cuenta_sel), 2
+      ):
+        st.error(
+            f"Saldo insuficiente en la cuenta: tiene"
+            f" ${saldo_de_cuenta(cuenta_sel):,.2f} y quieres abonar"
+            f" ${monto:,.2f}."
+        )
+      else:
+        try:
+          cursor.execute(
+              """
+                        INSERT INTO abonos (fecha, catorcena, acreedor_nombre, monto, origen, notas, cuenta_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+              (
+                  str(fecha),
+                  catorcena,
+                  acreedor,
+                  monto,
+                  origen,
+                  notas,
+                  cuenta_sel,
+              ),
+          )
+          nuevo_abono_id = cursor.fetchone()[0]
+          if cuenta_sel is not None:
+            cursor.execute(
+                """
+                            INSERT INTO transacciones (fecha, cuenta_id, tipo, monto, concepto, abono_id)
+                            VALUES (%s, %s, 'Egreso', %s, %s, %s)
+                            """,
+                (
+                    str(fecha),
+                    cuenta_sel,
+                    monto,
+                    f"Abono a {acreedor}",
+                    nuevo_abono_id,
+                ),
+            )
+          conn.commit()
+        except Exception as e:
+          conn.rollback()
+          st.error(f"No se pudo guardar el abono: {
