@@ -23,7 +23,7 @@ def get_db_connection():
 conn = get_db_connection()
 cursor = conn.cursor()
 
-# Crear tablas si no existen (incluyendo columna opcional para ajuste por intereses/saldo real)
+# Crear tablas si no existen
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS acreedores (
     id SERIAL PRIMARY KEY,
@@ -31,6 +31,17 @@ CREATE TABLE IF NOT EXISTS acreedores (
     monto_inicial NUMERIC(10, 2) NOT NULL,
     ajuste_intereses NUMERIC(10, 2) DEFAULT 0.00
 );
+""")
+
+# Asegurar que la columna ajuste_intereses exista si la tabla ya fue creada previamente
+cursor.execute("""
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name='acreedores' AND column_name='ajuste_intereses') THEN
+        ALTER TABLE acreedores ADD COLUMN ajuste_intereses NUMERIC(10, 2) DEFAULT 0.00;
+    END IF;
+END $$;
 """)
 
 cursor.execute("""
