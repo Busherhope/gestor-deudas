@@ -175,7 +175,7 @@ if not df_resumen.empty:
 
 st.markdown("---")
 
-# --- ASISTENTE Y CÁLCULO DE INGRESOS DINÁMICO ---
+# --- ASISTENTE DE INGRESOS DINÁMICO ---
 st.subheader("🧮 Asistente de Ingresos y Distribución Catorcenal")
 
 if "lista_gastos" not in st.session_state:
@@ -427,8 +427,8 @@ with st.expander("➕ / ⚙️ Registrar o Administrar Acreedores (Deudas)"):
             step=100.0,
             key=f"nuevo_saldo_{acreedor_a_editar}_{saldo_actual_editar}",
             help=(
-                "Este será el saldo pendiente real, sin importar cuánto se haya"
-                " abonado antes."
+                "Ingresa el saldo real que debes actualmente; el sistema"
+                " recalibrará la base automáticamente."
             ),
         )
         btn_editar_deuda = st.form_submit_button("💾 Actualizar Saldo")
@@ -621,7 +621,7 @@ with col_historial:
           df_abonos["id"].tolist(),
           format_func=lambda x: (
               f"ID #{x} -"
-              f" {df_abnos[df_abonos['id']==x]['acreedor_nombre'].values[0]}"
+              f" {df_abonos[df_abonos['id']==x]['acreedor_nombre'].values[0]}"
               f" (${df_abonos[df_abonos['id']==x]['monto'].values[0]:,.2f})"
           ),
       )
