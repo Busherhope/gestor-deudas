@@ -175,8 +175,8 @@ if not df_resumen.empty:
 
 st.markdown("---")
 
-# --- ASISTENTE Y CÁLCULO DE NÓMINA DINÁMICO ---
-st.subheader("🧮 Asistente de Nómina y Distribución Catorcenal")
+# --- ASISTENTE Y CÁLCULO DE INGRESOS DINÁMICO ---
+st.subheader("🧮 Asistente de Ingresos y Distribución Catorcenal")
 
 if "lista_gastos" not in st.session_state:
   st.session_state.lista_gastos = [
@@ -190,73 +190,27 @@ if "lista_gastos" not in st.session_state:
   ]
 
 with st.expander(
-    "🚀 Calcular mi Nómina y Distribución Inteligente", expanded=True
+    "🚀 Calcular mi Ingreso y Distribución Inteligente", expanded=True
 ):
   col_inputs, col_resultados = st.columns([1.2, 1])
 
   with col_inputs:
-    st.write("#### 1. Parámetros de la Catorcena (Nómina)")
+    st.write("#### 1. Ingreso de la Catorcena")
 
     with st.container():
-      st.markdown("*Calculadora automática de ingresos:*")
-      col_h1, col_h2 = st.columns(2)
-      horas_trabajadas = col_h1.number_input(
-          "Horas Trabajadas", value=48.0, step=0.5, format="%.2f"
-      )
-      sueldo_hora = col_h2.number_input(
-          "Sueldo por Hora ($)", value=48.61, step=0.10, format="%.2f"
-      )
-
-      col_b1, col_b2 = st.columns(2)
-      bono_nocturno = col_b1.number_input(
-          "Bono Nocturno ($)", value=30.0, step=5.0, format="%.2f"
-      )
-      prima_dominical = col_b2.number_input(
-          "Prima Dominical ($)", value=80.0, step=5.0, format="%.2f"
-      )
-
-      saldo_prestamo_pendiente_nomina = st.number_input(
-          "Saldo Pendiente Préstamo Nomix a descontar ($)",
-          value=550.46,
+      ingreso_neto = st.number_input(
+          "Ingreso Total / Neto de la Catorcena ($)",
+          value=2341.44,
           step=50.0,
           format="%.2f",
       )
+      origen_ingreso = st.selectbox(
+          "Categoría / Origen del Ingreso", ORIGENES
+      )
 
-    # --- Lógica interna de cálculo de nómina ---
-    sueldo_base = horas_trabajadas * sueldo_hora
-    bono_desempeno = sueldo_base * 0.34
-    fondo_ahorro_empresa = 340.96
-    apoyo_teletrabajo = 18.60
-    vales_despensa = 76.00
-
-    total_percepciones = (
-        sueldo_base
-        + bono_desempeno
-        + bono_nocturno
-        + prima_dominical
-        + fondo_ahorro_empresa
-        + apoyo_teletrabajo
-        + vales_despensa
-    )
-
-    cuotas_imss = 53.71
-    cesantia_vejez = 44.63
-    fondo_ahorro_empleado = 340.96
-    fondo_ahorro_empresa_ded = 340.96
-    prestamo_nomix_ded = saldo_prestamo_pendiente_nomina
-
-    total_deducciones = (
-        cuotas_imss
-        + cesantia_vejez
-        + fondo_ahorro_empleado
-        + fondo_ahorro_empresa_ded
-        + prestamo_nomix_ded
-    )
-
-    ingreso_neto = total_percepciones - total_deducciones
     st.success(
-        f"💰 **Ingreso Neto Calculado (Libre):** `${ingreso_neto:,.2f} MXN`"
-        f" *(Vales de despensa aparte: ${vales_despensa:,.2f})*"
+        f"💰 **Ingreso Seleccionado:** `${ingreso_neto:,.2f} MXN`"
+        f" *(Origen: {origen_ingreso})*"
     )
 
     st.write("---")
@@ -331,7 +285,7 @@ with st.expander(
   with col_resultados:
     st.write("#### 2. Balance y Recomendación Automática")
     st.info(f"""
-        * **Ingreso Neto (Nómina):** `${ingreso_neto:,.2f}`
+        * **Ingreso Neto (Catorcena):** `${ingreso_neto:,.2f}`
         * **(-) Gastos Indispensables:** `${gastos_totales_calculados:,.2f}`
         * **(-) Colchón de Emergencia:** `${colchon_emergencia:,.2f}`
         """)
@@ -340,7 +294,7 @@ with st.expander(
       st.error(
           f"⚠️ **Atención:** Tus gastos y colchón"
           f" (${gastos_totales_calculados + colchon_emergencia:,.2f}) superan tu"
-          f" nómina de esta catorcena (${ingreso_neto:,.2f})."
+          f" ingreso de esta catorcena (${ingreso_neto:,.2f})."
       )
       st.warning(
           "👉 **Recomendación:** Modo Supervivencia activado. No abonar a"
@@ -667,7 +621,7 @@ with col_historial:
           df_abonos["id"].tolist(),
           format_func=lambda x: (
               f"ID #{x} -"
-              f" {df_abonos[df_abonos['id']==x]['acreedor_nombre'].values[0]}"
+              f" {df_abnos[df_abonos['id']==x]['acreedor_nombre'].values[0]}"
               f" (${df_abonos[df_abonos['id']==x]['monto'].values[0]:,.2f})"
           ),
       )
