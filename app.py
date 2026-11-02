@@ -134,9 +134,9 @@ with st.expander("➕ / ⚙️ Registrar o Administrar Acreedores (Deudas)"):
       acreedor_a_editar = st.selectbox(
           "Selecciona deuda:",
           df_acreedores["nombre"].tolist(),
-          key="sel_ed_deuda_ principal",
+          key="sel_ed_deuda_principal",
       )
-      abonado_ ed = (
+      abonado_ed = (
           float(
               df_abonos[df_abonos["acreedor_nombre"] == acreedor_a_editar][
                   "monto"
@@ -218,7 +218,6 @@ with col_form:
     )
     monto = st.number_input("Monto a abonar ($)", min_value=1.0, step=50.0)
 
-    # AQUÍ ES DONDE APARECEN TUS CUENTAS CREADAS
     cuenta_sel = st.selectbox(
         "Cuenta de origen (de dónde sale el dinero)",
         opciones_cuenta,
