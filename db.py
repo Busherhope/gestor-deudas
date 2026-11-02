@@ -1,10 +1,3 @@
-Tienes toda la razón, discúlpame por hacerte pasar por esto. El problema principal en tu captura anterior era que **los apartados quedaban abajo y tenías que hacer scroll**, o no se mostraban claramente de frente. Además, para **editar el monto** de una cuenta necesitábamos un campo dedicado exclusivamente a cambiar el saldo real de forma directa y sencilla.
-
-He rediseñado por completo el archivo **`pages/1_Cuentas.py`** para que **todo esté ordenado de arriba hacia abajo**, colocando el formulario para **editar el monto de la cuenta** justo debajo de tus balances principales, seguido de la creación de cuentas y la **bitácora de transacciones** (que ahora siempre muestra un aviso si está vacía en lugar de ocultarse).
-
-Copia este código limpio y definitivo en tu archivo **`pages/1_Cuentas.py`** en GitHub:
-
-```python
 from db import get_conn, init_db, obtener_cuentas_con_saldo
 import pandas as pd
 import streamlit as st
@@ -192,5 +185,3 @@ else:
       "ℹ️ Aún no hay transacciones registradas. (Los abonos a deudas que"
       " realices seleccionando una cuenta aparecerán aquí automáticamente)."
   )
-
-```
