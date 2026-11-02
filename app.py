@@ -257,6 +257,58 @@ with st.expander("➕ / ⚙️ Registrar o Administrar Acreedores (Deudas)"):
                         st.error(f"Ya existe un acreedor con el nombre '{nuevo_nombre.strip()}'.")
 
     with col_lista_deudas:
+        # ---- EDITAR MONTO DE UNA DEUDA ----
+        st.write("#### ✏️ Editar Monto de una Deuda")
+        if not df_acreedores.empty:
+            # El selectbox va fuera del form para que el monto se actualice al cambiar de deuda
+            acreedor_a_editar = st.selectbox(
+                "Selecciona la deuda a editar:",
+                df_acreedores["nombre"].tolist(),
+                key="select_editar_acreedor",
+            )
+            monto_actual_deuda = float(
+                df_acreedores.loc[df_acreedores["nombre"] == acreedor_a_editar, "monto_inicial"].iloc[0]
+            )
+            abonado_actual = (
+                float(df_abonos.loc[df_abonos["acreedor_nombre"] == acreedor_a_editar, "monto"].sum())
+                if not df_abonos.empty
+                else 0.0
+            )
+            st.caption(
+                f"Monto actual: **${monto_actual_deuda:,.2f}** · Abonado hasta hoy: **${abonado_actual:,.2f}**"
+            )
+
+            with st.form("form_editar_deuda"):
+                # La key incluye el nombre para que el valor se refresque al cambiar de deuda
+                nuevo_monto_deuda = st.number_input(
+                    "Nuevo monto de la deuda ($)",
+                    min_value=1.0,
+                    value=max(monto_actual_deuda, 1.0),
+                    step=100.0,
+                    key=f"edit_monto_deuda_{acreedor_a_editar}",
+                )
+                btn_actualizar_deuda = st.form_submit_button("💾 Actualizar Monto")
+
+                if btn_actualizar_deuda:
+                    try:
+                        cursor.execute(
+                            "UPDATE acreedores SET monto_inicial = %s WHERE nombre = %s",
+                            (nuevo_monto_deuda, acreedor_a_editar),
+                        )
+                        conn.commit()
+                        st.success(
+                            f"Monto de '{acreedor_a_editar}' actualizado a ${nuevo_monto_deuda:,.2f}."
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"No se pudo actualizar el monto: {e}")
+        else:
+            st.info("Aún no hay deudas para editar.")
+
+        st.write("---")
+
+        # ---- ELIMINAR DEUDA ----
         st.write("#### Eliminar Deuda Existente")
         if not df_acreedores.empty:
             acreedor_a_borrar = st.selectbox(
