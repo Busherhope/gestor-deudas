@@ -23,12 +23,13 @@ def get_db_connection():
 conn = get_db_connection()
 cursor = conn.cursor()
 
-# Crear tablas si no existen
+# Crear tablas si no existen (incluyendo columna opcional para ajuste por intereses/saldo real)
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS acreedores (
     id SERIAL PRIMARY KEY,
     nombre VARCHAR(100) UNIQUE NOT NULL,
-    monto_inicial NUMERIC(10, 2) NOT NULL
+    monto_inicial NUMERIC(10, 2) NOT NULL,
+    ajuste_intereses NUMERIC(10, 2) DEFAULT 0.00
 );
 """)
 
@@ -62,6 +63,12 @@ df_abonos = pd.read_sql_query("SELECT * FROM abonos", conn)
 # Asegurar tipos numéricos
 if not df_acreedores.empty:
   df_acreedores["monto_inicial"] = df_acreedores["monto_inicial"].astype(float)
+  if "ajuste_intereses" in df_acreedores.columns:
+    df_acreedores["ajuste_intereses"] = df_acreedores["ajuste_intereses"].astype(
+        float
+    )
+  else:
+    df_acreedores["ajuste_intereses"] = 0.0
 if not df_abonos.empty:
   df_abonos["monto"] = df_abonos["monto"].astype(float)
 
@@ -69,17 +76,23 @@ resumen = []
 for _, row in df_acreedores.iterrows():
   nombre = row["nombre"]
   inicial = float(row["monto_inicial"])
+  ajuste = float(row.get("ajuste_intereses", 0.0))
+
   total_abonado = (
       df_abonos[df_abonos["acreedor_nombre"] == nombre]["monto"].sum()
       if not df_abonos.empty
       else 0.0
   )
-  restante = inicial - total_abonado
+
+  # Saldo restante considerando la base inicial, abonos y los intereses diarios sumados
+  restante = (inicial - total_abonado) + ajuste
   progreso = (total_abonado / inicial) * 100 if inicial > 0 else 100.0
+
   resumen.append({
       "Acreedor": nombre,
       "Deuda Inicial": f"${inicial:,.2f}",
       "Total Abonado": f"${total_abonado:,.2f}",
+      "Ajuste/Intereses": f"${ajuste:,.2f}",
       "Saldo Restante": f"${max(restante, 0):,.2f}",
       "Saldo_Num": max(restante, 0),
       "% Pagado": f"{min(progreso, 100.0):.1f}%",
@@ -92,7 +105,7 @@ deuda_total_inicial = (
     df_acreedores["monto_inicial"].sum() if not df_acreedores.empty else 0.0
 )
 total_pagado_global = df_abonos["monto"].sum() if not df_abonos.empty else 0.0
-saldo_total_pendiente = deuda_total_inicial - total_pagado_global
+saldo_total_pendiente = sum([r["Saldo_Num"] for r in resumen])
 
 col1.metric("Deuda Total Inicial", f"${deuda_total_inicial:,.2f}")
 col2.metric(
@@ -329,207 +342,78 @@ with st.expander(
 
 st.markdown("---")
 
-# --- ADMINISTRACIÓN DE ACREEDORES ---
-with st.expander("➕ / ⚙️ Registrar o Administrar Acreedores (Deudas)"):
-  col_nueva_deuda, col_lista_deudas = st.columns([1, 1.2])
+# --- ADMINISTRACIÓN DE ACREEDORES Y SINCRONIZACIÓN DE INTERESES ---
+with st.expander(
+    "➕ / ⚙️ Registrar, Sincronizar o Administrar Acreedores (Deudas)"
+):
+  col_nueva_deuda, col_sync, col_lista_deudas = st.columns([1, 1, 1.2])
 
   with col_nueva_deuda:
     st.write("#### Agregar Nueva Deuda")
     with st.form("form_nueva_deuda", clear_on_submit=True):
       nuevo_nombre = st.text_input(
-          "Nombre / Emisor de la Deuda",
-          placeholder="Ej: Liverpool, Banamex, etc.",
+          "Nombre / Emisor", placeholder="Ej: BANCO AZTECA"
       )
       nuevo_monto = st.number_input(
-          "Monto Inicial de la Deuda ($)", min_value=1.0, step=500.0
+          "Monto Inicial ($)", min_value=1.0, step=500.0
       )
       btn_guardar_deuda = st.form_submit_button("Añadir Deuda")
 
       if btn_guardar_deuda:
         if nuevo_nombre.strip() == "":
-          st.error("Ingresa un nombre válido para el acreedor.")
+          st.error("Ingresa un nombre válido.")
         else:
           try:
             cursor.execute(
-                "INSERT INTO acreedores (nombre, monto_inicial) VALUES (%s,"
-                " %s)",
+                "INSERT INTO acreedores (nombre, monto_inicial,"
+                " ajuste_intereses) VALUES (%s, %s, 0.00)",
                 (nuevo_nombre.strip(), nuevo_monto),
             )
             conn.commit()
-            st.success(
-                f"¡Deuda '{nuevo_nombre.strip()}' por ${nuevo_monto:,.2f}"
-                " añadida!"
-            )
+            st.success(f"¡Deuda '{nuevo_nombre.strip()}' añadida!")
             st.rerun()
           except psycopg2.IntegrityError:
             conn.rollback()
-            st.error(
-                "Ya existe un acreedor con el nombre"
-                f" '{nuevo_nombre.strip()}'."
-            )
+            st.error("El acreedor ya existe.")
 
-  with col_lista_deudas:
-    st.write("#### Eliminar Deuda Existente")
+  with col_sync:
+    st.write("#### Sincronizar Saldo App (Intereses)")
     if not df_acreedores.empty:
-      acreedor_a_borrar = st.selectbox(
-          "Selecciona la deuda a eliminar:",
-          df_acreedores["nombre"].tolist(),
-          key="select_borrar_acreedor",
-      )
-      st.caption(
-          "⚠️ Al borrar una deuda, también se eliminarán sus abonos asociados."
-      )
-      if st.button("🗑️ Eliminar Deuda Seleccionada", type="primary"):
-        cursor.execute(
-            "DELETE FROM acreedores WHERE nombre = %s", (acreedor_a_borrar,)
+      with st.form("form_sync_intereses"):
+        acreedor_sync = st.selectbox(
+            "Selecciona Deuda",
+            df_acreedores["nombre"].tolist(),
+            key="sel_sync_ac",
         )
-        cursor.execute(
-            "DELETE FROM abonos WHERE acreedor_nombre = %s", (acreedor_a_borrar,)
+        saldo_real_app = st.number_input(
+            "Saldo que marca la App hoy ($)",
+            min_value=0.0,
+            value=18829.0,
+            step=50.0,
         )
-        conn.commit()
-        st.success(f"Deuda '{acreedor_a_borrar}' eliminada.")
-        st.rerun()
+        btn_sincronizar = st.form_submit_button("Sincronizar Saldo Real")
 
-st.markdown("---")
+        if btn_sincronizar:
+          # Buscar datos actuales de ese acreedor
+          row_ac = df_acreedores[df_acreedores["nombre"] == acreedor_sync].iloc[
+              0
+          ]
+          m_inicial = float(row_ac["monto_inicial"])
 
-# --- REGISTRO Y HISTORIAL DE ABONOS ---
-col_form, col_historial = st.columns([1, 1.3])
-
-with col_form:
-  st.subheader("📝 Registrar Nuevo Abono")
-  with st.form("form_abono", clear_on_submit=True):
-    fecha = st.date_input("Fecha de pago")
-    catorcena = st.text_input("Catorcena / Periodo", value="25 de Septiembre")
-    acreedor = st.selectbox(
-        "Acreedor",
-        (
-            df_acreedores["nombre"].tolist()
-            if not df_acreedores.empty
-            else ["Sin Acreedores"]
-        ),
-    )
-    monto = st.number_input("Monto a abonar ($)", min_value=1.0, step=50.0)
-    origen = st.selectbox(
-        "Origen del dinero",
-        ["Sueldo Base", "Bono Desempeño", "Nomix / Adelanto", "Otro"],
-    )
-    notas = st.text_input("Notas adicionales", value="")
-
-    btn_guardar = st.form_submit_button("Guardar Abono")
-
-    if btn_guardar:
-      if df_acreedores.empty:
-        st.error("No hay acreedores registrados. Añade uno primero.")
-      else:
-        cursor.execute(
-            """
-                INSERT INTO abonos (fecha, catorcena, acreedor_nombre, monto, origen, notas)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """,
-            (str(fecha), catorcena, acreedor, monto, origen, notas),
-        )
-        conn.commit()
-        st.success(f"¡Abono de ${monto:,.2f} registrado con éxito!")
-        st.rerun()
-
-with col_historial:
-  st.subheader("📜 Bitácora de Abonos")
-  tab_ver, tab_gestion = st.tabs(["Ver Historial", "⚙️ Editar / Eliminar"])
-
-  with tab_ver:
-    if not df_abonos.empty:
-      df_mostrar = df_abonos[
-          ["id", "fecha", "catorcena", "acreedor_nombre", "monto", "origen", "notas"]
-      ].sort_values(by="fecha", ascending=False)
-      df_mostrar.columns = [
-          "ID",
-          "Fecha",
-          "Catorcena",
-          "Acreedor",
-          "Monto",
-          "Origen",
-          "Notas",
-      ]
-      st.dataframe(df_mostrar, use_container_width=True)
-    else:
-      st.info("Aún no has registrado ningún abono.")
-
-  with tab_gestion:
-    if not df_abonos.empty:
-      abono_id_seleccionado = st.selectbox(
-          "Selecciona el ID del abono a modificar:",
-          df_abonos["id"].tolist(),
-          format_func=lambda x: (
-              f"ID #{x} -"
-              f" {df_abonos[df_abonos['id']==x]['acreedor_nombre'].values[0]}"
-              f" (${df_abonos[df_abonos['id']==x]['monto'].values[0]:,.2f})"
-          ),
-      )
-
-      abono_datos = df_abonos[df_abonos["id"] == abono_id_seleccionado].iloc[0]
-
-      with st.expander("✏️ Editar Abono", expanded=True):
-        with st.form("form_editar_abono"):
-          edit_catorcena = st.text_input(
-              "Catorcena", value=abono_datos["catorcena"]
+          # Sumar abonos de este acreedor
+          t_abonos = (
+              df_abonos[df_abonos["acreedor_nombre"] == acreedor_sync][
+                  "monto"
+              ].sum()
+              if not df_abonos.empty
+              else 0.0
           )
-          edit_acreedor = st.selectbox(
-              "Acreedor",
-              df_acreedores["nombre"].tolist(),
-              index=(
-                  df_acreedores["nombre"].tolist().index(
-                      abono_datos["acreedor_nombre"]
-                  )
-                  if abono_datos["acreedor_nombre"]
-                  in df_acreedores["nombre"].tolist()
-                  else 0
-              ),
-          )
-          edit_monto = st.number_input(
-              "Monto ($)", value=float(abono_datos["monto"]), min_value=1.0
-          )
-          edit_origen = st.selectbox(
-              "Origen",
-              ["Sueldo Base", "Bono Desempeño", "Nomix / Adelanto", "Otro"],
-              index=[
-                  "Sueldo Base",
-                  "Bono Desempeño",
-                  "Nomix / Adelanto",
-                  "Otro",
-              ].index(abono_datos["origen"]),
-          )
-          edit_notas = st.text_input("Notas", value=abono_datos["notas"])
 
-          btn_actualizar = st.form_submit_button("Actualizar Abono")
+          # Cálculo del ajuste necesario: Saldo App = (Inicial - Abonos) + Ajuste
+          # Entonces: Ajuste = Saldo App - (Inicial - Abonos)
+          nuevo_ajuste = saldo_real_app - (m_inicial - t_abonos)
 
-          if btn_actualizar:
-            cursor.execute(
-                """
-                            UPDATE abonos
-                            SET catorcena = %s, acreedor_nombre = %s, monto = %s, origen = %s, notas = %s
-                            WHERE id = %s
-                        """,
-                (
-                    edit_catorcena,
-                    edit_acreedor,
-                    edit_monto,
-                    edit_origen,
-                    edit_notas,
-                    int(abono_id_seleccionado),
-                ),
-            )
-            conn.commit()
-            st.success("¡Abono actualizado!")
-            st.rerun()
-
-      st.markdown("---")
-      with st.expander("🗑️ Eliminar Abono"):
-        if st.button("Confirmar Eliminación", type="primary"):
           cursor.execute(
-              "DELETE FROM abonos WHERE id = %s", (int(abono_id_seleccionado),)
+              "UPDATE acreedores SET ajuste_intereses = %s WHERE nombre = %s",
+              (nuevo_ajuste, acreedor_sync),
           )
-          conn.commit()
-          st.success("Abono eliminado.")
-          st.rerun()
-    else:
-      st.info("No hay abonos para modificar.")
