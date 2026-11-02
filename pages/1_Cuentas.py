@@ -1,12 +1,13 @@
 import pandas as pd
 import streamlit as st
-from db import get_conn, obtener_cuentas_con_saldo
+from db import get_conn, init_db, obtener_cuentas_con_saldo
 
 st.set_page_config(
     page_title="Mis Cuentas y Efectivo", page_icon="🏦", layout="wide"
 )
 
 conn = get_conn()
+init_db(conn)  # <--- ¡ESTO ES LO QUE FALTABA PARA CREAR LAS TABLAS!
 
 if st.button("⬅️ Volver a Control de Deudas"):
   st.switch_page("app.py")
@@ -14,6 +15,9 @@ if st.button("⬅️ Volver a Control de Deudas"):
 st.title("🏦 Gestión de Cuentas (Débito y Efectivo)")
 
 df_cuentas = obtener_cuentas_con_saldo(conn)
+
+# --- RESTO DEL CÓDIGO DE CUENTAS ---
+...
 
 # --- RESUMEN DE SALDOS ---
 st.subheader("Balances Actuales")
