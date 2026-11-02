@@ -71,12 +71,12 @@ def obtener_cuentas_con_saldo(conn):
             c.id, 
             c.nombre, 
             c.tipo, 
-            c.saldo_inicial,
-            COALESCE(SUM(CASE WHEN t.tipo = 'Ingreso' THEN t.monto ELSE 0 END), 0) -
-            COALESCE(SUM(CASE WHEN t.tipo = 'Egreso' THEN t.monto ELSE 0 END), 0) as movimiento_neto,
-            (c.saldo_inicial + 
-             COALESCE(SUM(CASE WHEN t.tipo = 'Ingreso' THEN t.monto ELSE 0 END), 0) -
-             COALESCE(SUM(CASE WHEN t.tipo = 'Egreso' THEN t.monto ELSE 0 END), 0)) as saldo
+            COALESCE(c.saldo_inicial, 0) as saldo_inicial,
+            COALESCE(SUM(CASE WHEN LOWER(t.tipo) = 'ingreso' THEN t.monto ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN LOWER(t.tipo) = 'egreso' THEN t.monto ELSE 0 END), 0) as movimiento_neto,
+            (COALESCE(c.saldo_inicial, 0) + 
+             COALESCE(SUM(CASE WHEN LOWER(t.tipo) = 'ingreso' THEN t.monto ELSE 0 END), 0) -
+             COALESCE(SUM(CASE WHEN LOWER(t.tipo) = 'egreso' THEN t.monto ELSE 0 END), 0)) as saldo
         FROM cuentas c
         LEFT JOIN transacciones t ON c.id = t.cuenta_id
         GROUP BY c.id, c.nombre, c.tipo, c.saldo_inicial
