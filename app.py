@@ -2,19 +2,38 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-# --- INTERFAZ STREAMLIT ---
-st.set_page_config(
-    page_title="Gestor de Deudas Catorcenal", page_icon="💳", layout="wide"
+from db import (
+    get_conn,
+    init_db,
+    obtener_cuentas_con_saldo
 )
 
-from db import get_conn, init_db, obtener_cuentas_con_saldo
+# ==========================================
+# CONFIGURACIÓN
+# ==========================================
 
-# --- CONEXIÓN A BASE DE DATOS EN LA NUBE ---
+st.set_page_config(
+    page_title="Gestor de Deudas Catorcenal",
+    page_icon="💳",
+    layout="wide"
+)
+
+# ==========================================
+# CONEXIÓN A BASE DE DATOS
+# ==========================================
+
 conn = get_conn()
+
 init_db(conn)
+
 cursor = conn.cursor()
 
-ORIGENES = ["Sueldo Base", "Bono Desempeño", "Nomix / Adelanto", "Otro"]
+ORIGENES = [
+    "Sueldo Base",
+    "Bono Desempeño",
+    "Nomix / Adelanto",
+    "Otro"
+]
 
 st.title("💳 Control y Seguimiento de Deudas")
 
