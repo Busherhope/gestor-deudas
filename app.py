@@ -51,7 +51,7 @@ st.set_page_config(
 )
 st.title("💳 Control y Seguimiento de Deudas")
 
-# --- ADMINISTRACIÓN DE ACREEDORES (Arriba para acción inmediata) ---
+# --- ADMINISTRACIÓN DE ACREEDORES (Añadir, Editar Monto y Eliminar) ---
 with st.expander(
     "➕ / ⚙️ Registrar, Editar o Administrar Acreedores (Deudas)", expanded=True
 ):
@@ -86,10 +86,8 @@ with st.expander(
             st.error("El acreedor ya existe.")
 
   with col_editar_deuda:
-    st.write("#### ✏️ Modificar Monto Inicial")
-    df_acreedores_edit = pd.read_sql_query(
-        "SELECT * FROM acreedores", conn
-    )  # Lectura fresca para el formulario
+    st.write("#### ✏️ Editar Monto de Deuda")
+    df_acreedores_edit = pd.read_sql_query("SELECT * FROM acreedores", conn)
     if not df_acreedores_edit.empty:
       with st.form("form_editar_deuda"):
         acreedor_editar = st.selectbox(
@@ -429,4 +427,78 @@ with col_historial:
     if not df_abonos.empty:
       abono_id_seleccionado = st.selectbox(
           "Selecciona el ID del abono a modificar:",
-      ... (continuación igual)
+          df_abonos["id"].tolist(),
+          format_func=lambda x: (
+              f"ID #{x} -"
+              f" {df_abonos[df_abonos['id']==x]['acreedor_nombre'].values[0]}"
+              f" (${df_abonos[df_abonos['id']==x]['monto'].values[0]:,.2f})"
+          ),
+      )
+
+      abono_datos = df_abonos[df_abonos["id"] == abono_id_seleccionado].iloc[0]
+
+      with st.expander("✏️ Editar Abono", expanded=True):
+        with st.form("form_editar_abono"):
+          edit_catorcena = st.text_input(
+              "Catorcena", value=abono_datos["catorcena"]
+          )
+          edit_acreedor = st.selectbox(
+              "Acreedor",
+              df_acreedores["nombre"].tolist(),
+              index=(
+                  df_acreedores["nombre"].tolist().index(
+                      abono_datos["acreedor_nombre"]
+                  )
+                  if abono_datos["acreedor_nombre"]
+                  in df_acreedores["nombre"].tolist()
+                  else 0
+              ),
+          )
+          edit_monto = st.number_input(
+              "Monto ($)", value=float(abono_datos["monto"]), min_value=1.0
+          )
+          edit_origen = st.selectbox(
+              "Origen",
+              ["Sueldo Base", "Bono Desempeño", "Nomix / Adelanto", "Otro"],
+              index=[
+                  "Sueldo Base",
+                  "Bono Desempeño",
+                  "Nomix / Adelanto",
+                  "Otro",
+              ].index(abono_datos["origen"]),
+          )
+          edit_notas = st.text_input("Notas", value=abono_datos["notas"])
+
+          btn_actualizar = st.form_submit_button("Actualizar Abono")
+
+          if btn_actualizar:
+            cursor.execute(
+                """
+                            UPDATE abonos
+                            SET catorcena = %s, acreedor_nombre = %s, monto = %s, origen = %s, notas = %s
+                            WHERE id = %s
+                        """,
+                (
+                    edit_catorcena,
+                    edit_acreedor,
+                    edit_monto,
+                    edit_origen,
+                    edit_notas,
+                    int(abono_id_seleccionado),
+                ),
+            )
+            conn.commit()
+            st.success("¡Abono actualizado!")
+            st.rerun()
+
+      st.markdown("---")
+      with st.expander("🗑️ Eliminar Abono"):
+        if st.button("Confirmar Eliminación", type="primary"):
+          cursor.execute(
+              "DELETE FROM abonos WHERE id = %s", (int(abono_id_seleccionado),)
+          )
+          conn.commit()
+          st.success("Abono eliminado.")
+          st.rerun()
+    else:
+      st.info("No hay abonos para modificar.")
