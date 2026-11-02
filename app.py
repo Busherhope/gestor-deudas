@@ -4,6 +4,82 @@ import streamlit as st
 
 # --- INTERFAZ STREAMLIT (debe ser el primer comando de Streamlit) ---
 st.set_page_config(
+    st.markdown("""
+    <style>
+        /* Fondo general de la aplicación estilo lujoso/minimalista */
+        .stApp {
+            background-color: #141619;
+            color: #e5e7eb;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        /* Ocultar elementos predeterminados de Streamlit que ensucian la vista */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+
+        /* Tarjetas y contenedores con bordes finos y sutiles (Estilo Old Money) */
+        div[data-testid="stExpander"], div.stForm, div[data-testid="stVerticalBlock"] > div[style*="border"] {
+            background-color: #1a1d21 !important;
+            border: 1px solid rgba(197, 168, 128, 0.15) !important;
+            border-radius: 10px !important;
+            padding: 1.2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Métricos con diseño limpio y tipografía elegante */
+        div[data-testid="metric-container"] {
+            background-color: #1a1d21;
+            border: 1px solid rgba(197, 168, 128, 0.2);
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        div[data-testid="metric-container"] label {
+            color: #a3a3a3 !important;
+            font-size: 0.85rem !important;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+            color: #f3f4f6 !important;
+            font-weight: 600;
+        }
+
+        /* Botones principales refinados con acento sutil */
+        .stButton button, button[kind="primary"] {
+            background-color: #212529 !important;
+            color: #d4af37 !important;
+            border: 1px solid rgba(212, 175, 55, 0.4) !important;
+            border-radius: 6px !important;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .stButton button:hover, button[kind="primary"]:hover {
+            background-color: #d4af37 !important;
+            color: #141619 !important;
+            border-color: #d4af37 !important;
+        }
+
+        /* Tablas y DataFrames estilizados */
+        dataframe, table {
+            border-radius: 8px !important;
+            overflow: hidden;
+        }
+        
+        /* Inputs y Selectbox limpios */
+        div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+            background-color: #1e2227 !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            border-radius: 6px !important;
+            color: #fff !important;
+        }
+        div[data-testid="stTextInput"] input:focus, div[data-testid="stNumberInput"] input:focus {
+            border-color: #d4af37 !important;
+            box-shadow: 0 0 5px rgba(212, 175, 55, 0.3) !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+    
     page_title="Gestor de Deudas y Nómina Catorcenal",
     page_icon="💳",
     layout="wide",
