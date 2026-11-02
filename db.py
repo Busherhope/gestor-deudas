@@ -7,8 +7,6 @@ st.set_page_config(
     page_title="Gestor de Deudas Catorcenal", page_icon="💳", layout="wide"
 )
 
-from db import get_conn, init_db, obtener_cuentas_con_saldo
-
 # --- CONEXIÓN A BASE DE DATOS EN LA NUBE ---
 conn = get_conn()
 init_db(conn)
