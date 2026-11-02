@@ -325,4 +325,4 @@ with st.expander(
     )
 
     disponible_deudas = (
-        ingreso_net
+        ingreso_net )
