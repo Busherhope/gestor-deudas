@@ -119,11 +119,21 @@ with col_editar:
 
 st.markdown("---")
 
-# --- 3. TRANSACCIONES Y BITÁCORA ---
+# --- 3. TRANSACCIONES, BITÁCORA Y GESTIÓN ---
+st.subheader("💸 Registro y Gestión de Transacciones")
+
+query_trans = """
+    SELECT t.id, t.fecha, t.cuenta_id, c.nombre as cuenta, t.tipo, t.monto, t.concepto, t.abono_id
+    FROM transacciones t
+    JOIN cuentas c ON t.cuenta_id = c.id
+    ORDER BY t.fecha DESC, t.id DESC;
+"""
+df_transacciones = pd.read_sql_query(query_trans, conn)
+
 col_trans_form, col_trans_historial = st.columns([1, 1.3])
 
 with col_trans_form:
-  st.subheader("💸 Registrar Ingreso / Gasto Directo")
+  st.subheader("➕ Registrar Movimiento Directo")
   if not df_cuentas.empty:
     with st.form("form_transaccion_directa", clear_on_submit=True):
       fecha_t = st.date_input("Fecha")
@@ -161,35 +171,108 @@ with col_trans_form:
     st.info("Crea una cuenta primero para registrar movimientos.")
 
 with col_trans_historial:
-  st.subheader("📜 Bitácora de Transacciones (Cuentas)")
-  query_trans = """
-        SELECT t.id, t.fecha, c.nombre as cuenta, t.tipo, t.monto, t.concepto, t.abono_id
-        FROM transacciones t
-        JOIN cuentas c ON t.cuenta_id = c.id
-        ORDER BY t.fecha DESC, t.id DESC;
-    """
-  df_transacciones = pd.read_sql_query(query_trans, conn)
+  st.subheader("📜 Historial y Edición de Movimientos")
+  tab_ver_t, tab_edit_t = st.tabs(["Ver Bitácora", "⚙️ Editar / Eliminar"])
 
-  if not df_transacciones.empty:
-    st.dataframe(
-        df_transacciones[[
-            "id",
-            "fecha",
-            "cuenta",
-            "tipo",
-            "monto",
-            "concepto",
-        ]].rename(
-            columns={
-                "id": "ID",
-                "fecha": "Fecha",
-                "cuenta": "Cuenta",
-                "tipo": "Tipo",
-                "monto": "Monto",
-                "concepto": "Concepto",
-            }
-        ),
-        use_container_width=True,
-    )
-  else:
-    st.info("Aún no hay transacciones registradas.")
+  with tab_ver_t:
+    if not df_transacciones.empty:
+      st.dataframe(
+          df_transacciones[[
+              "id",
+              "fecha",
+              "cuenta",
+              "tipo",
+              "monto",
+              "concepto",
+          ]].rename(
+              columns={
+                  "id": "ID",
+                  "fecha": "Fecha",
+                  "cuenta": "Cuenta",
+                  "tipo": "Tipo",
+                  "monto": "Monto",
+                  "concepto": "Concepto",
+              }
+          ),
+          use_container_width=True,
+      )
+    else:
+      st.info("Aún no hay transacciones registradas.")
+
+  with tab_edit_t:
+    if not df_transacciones.empty:
+      trans_id_sel = st.selectbox(
+          "Selecciona el ID de la transacción:",
+          df_transacciones["id"].tolist(),
+          format_func=lambda x: (
+              f"ID #{x} -"
+              f" {df_transacciones[df_transacciones['id']==x]['concepto'].values[0]}"
+              f" (${df_transacciones[df_transacciones['id']==x]['monto'].values[0]:,.2f})"
+          ),
+      )
+
+      t_row = df_transacciones[df_transacciones["id"] == trans_id_sel].iloc[0]
+
+      with st.form("form_editar_transaccion"):
+        edit_t_fecha = st.date_input(
+            "Fecha", value=pd.to_datetime(t_row["fecha"]).date()
+        )
+        edit_t_cuenta = st.selectbox(
+            "Cuenta",
+            df_cuentas["id"].tolist(),
+            index=df_cuentas["id"].tolist().index(t_row["cuenta_id"])
+            if t_row["cuenta_id"] in df_cuentas["id"].tolist()
+            else 0,
+            format_func=lambda x: df_cuentas[df_cuentas["id"] == x][
+                "nombre"
+            ].values[0],
+        )
+        edit_t_tipo = st.selectbox(
+            "Tipo",
+            ["Ingreso", "Egreso"],
+            index=0 if t_row["tipo"] == "Ingreso" else 1,
+        )
+        edit_t_monto = st.number_input(
+            "Monto ($)", value=float(t_row["monto"]), min_value=0.0
+        )
+        edit_t_concepto = st.text_input("Concepto", value=t_row["concepto"])
+
+        btn_act_t = st.form_submit_button("Actualizar Transacción")
+        if btn_act_t:
+          try:
+            cursor.execute(
+                """
+                            UPDATE transacciones 
+                            SET fecha = %s, cuenta_id = %s, tipo = %s, monto = %s, concepto = %s
+                            WHERE id = %s
+                        """,
+                (
+                    str(edit_t_fecha),
+                    int(edit_t_cuenta),
+                    edit_t_tipo,
+                    edit_t_monto,
+                    edit_t_concepto,
+                    int(trans_id_sel),
+                ),
+            )
+            conn.commit()
+            st.success("¡Transacción actualizada con éxito!")
+            st.rerun()
+          except Exception as e:
+            conn.rollback()
+            st.error(f"Error al actualizar: {e}")
+
+      st.markdown("---")
+      if st.button("🗑️ Eliminar Transacción Seleccionada", type="primary"):
+        try:
+          cursor.execute(
+              "DELETE FROM transacciones WHERE id = %s", (int(trans_id_sel),)
+          )
+          conn.commit()
+          st.success("¡Transacción eliminada con éxito!")
+          st.rerun()
+        except Exception as e:
+          conn.rollback()
+          st.error(f"Error al eliminar: {e}")
+    else:
+      st.info("No hay transacciones disponibles para editar.")
