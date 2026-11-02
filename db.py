@@ -1,169 +1,86 @@
-
-import streamlit as st
+import os
 import psycopg2
-import pandas as pd
+import streamlit as st
 
 
-# ==========================================
-# CONEXIÓN A POSTGRESQL
-# ==========================================
-
+@st.cache_resource
 def get_conn():
-    """
-    Obtiene conexión a PostgreSQL usando los secretos
-    configurados en Streamlit Cloud.
-    """
+  db_url = st.secrets.get("postgres", {}).get("url") or os.environ.get(
+      "DATABASE_URL"
+  )
+  if not db_url:
+    st.error("⚠️ No se encontró la URL de la base de datos en los Secrets.")
+    st.stop()
+  return psycopg2.connect(db_url)
 
-    try:
-        if "DATABASE_URL" in st.secrets:
-            return psycopg2.connect(
-                st.secrets["DATABASE_URL"],
-                sslmode="require"
-            )
-
-        if "postgres" in st.secrets:
-            config = st.secrets["postgres"]
-
-            return psycopg2.connect(
-                host=config["host"],
-                database=config["database"],
-                user=config.get("username", config.get("user")),
-                password=config["password"],
-                port=config.get("port", 5432),
-                sslmode=config.get("sslmode", "require")
-            )
-
-        return psycopg2.connect(
-            host=st.secrets["DB_HOST"],
-            database=st.secrets["DB_NAME"],
-            user=st.secrets["DB_USER"],
-            password=st.secrets["DB_PASSWORD"],
-            port=st.secrets.get("DB_PORT", 5432),
-            sslmode=st.secrets.get("DB_SSLMODE", "require")
-        )
-
-    except Exception as e:
-        raise RuntimeError(
-            "No se pudo conectar a PostgreSQL. "
-            "Revisa las credenciales de Streamlit Secrets."
-        ) from e
-
-
-# ==========================================
-# CREACIÓN DE TABLAS
-# ==========================================
 
 def init_db(conn):
+  cursor = conn.cursor()
+  # Tabla de Acreedores (Deudas)
+  cursor.execute("""
+    CREATE TABLE IF NOT EXISTS acreedores (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(100) UNIQUE NOT NULL,
+        monto_inicial NUMERIC(10, 2) NOT NULL
+    );
+    """)
 
-    cursor = conn.cursor()
+  # Tabla de Abonos a Deudas (con referencia opcional a cuenta)
+  cursor.execute("""
+    CREATE TABLE IF NOT EXISTS abonos (
+        id SERIAL PRIMARY KEY,
+        fecha VARCHAR(20) NOT NULL,
+        catorcena VARCHAR(100) NOT NULL,
+        acreedor_nombre VARCHAR(100) NOT NULL,
+        monto NUMERIC(10, 2) NOT NULL,
+        origen VARCHAR(100),
+        notas TEXT,
+        cuenta_id INTEGER
+    );
+    """)
 
-    try:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS acreedores (
-                id SERIAL PRIMARY KEY,
-                nombre TEXT UNIQUE NOT NULL,
-                monto_inicial NUMERIC(14,2) NOT NULL DEFAULT 0
-            )
-        """)
+  # Tabla de Cuentas (Débito, Efectivo, etc.)
+  cursor.execute("""
+    CREATE TABLE IF NOT EXISTS cuentas (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(100) UNIQUE NOT NULL,
+        tipo VARCHAR(50) NOT NULL,
+        saldo_inicial NUMERIC(10, 2) DEFAULT 0.00
+    );
+    """)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS cuentas (
-                id SERIAL PRIMARY KEY,
-                nombre TEXT UNIQUE NOT NULL,
-                tipo TEXT NOT NULL,
-                saldo_inicial NUMERIC(14,2) NOT NULL DEFAULT 0
-            )
-        """)
+  # Tabla de Transacciones (Ingresos/Egresos en cuentas)
+  cursor.execute("""
+    CREATE TABLE IF NOT EXISTS transacciones (
+        id SERIAL PRIMARY KEY,
+        fecha VARCHAR(20) NOT NULL,
+        cuenta_id INTEGER REFERENCES cuentas(id) ON DELETE CASCADE,
+        tipo VARCHAR(20) NOT NULL,
+        monto NUMERIC(10, 2) NOT NULL,
+        concepto TEXT,
+        abono_id INTEGER
+    );
+    """)
+  conn.commit()
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS abonos (
-                id SERIAL PRIMARY KEY,
-                fecha DATE NOT NULL,
-                catorcena TEXT,
-                acreedor_nombre TEXT NOT NULL,
-                monto NUMERIC(14,2) NOT NULL,
-                origen TEXT,
-                notas TEXT,
-                cuenta_id INTEGER REFERENCES cuentas(id)
-                    ON DELETE SET NULL
-            )
-        """)
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS transacciones (
-                id SERIAL PRIMARY KEY,
-                fecha DATE NOT NULL,
-                cuenta_id INTEGER REFERENCES cuentas(id)
-                    ON DELETE SET NULL,
-                tipo TEXT NOT NULL,
-                monto NUMERIC(14,2) NOT NULL,
-                concepto TEXT,
-                abono_id INTEGER REFERENCES abonos(id)
-                    ON DELETE SET NULL
-            )
-        """)
-
-        # Compatibilidad con tablas existentes:
-        cursor.execute("""
-            ALTER TABLE abonos
-            ADD COLUMN IF NOT EXISTS cuenta_id INTEGER
-        """)
-
-        cursor.execute("""
-            ALTER TABLE transacciones
-            ADD COLUMN IF NOT EXISTS abono_id INTEGER
-        """)
-
-        conn.commit()
-
-    except Exception:
-        conn.rollback()
-        raise
-
-    finally:
-        cursor.close()
-
-
-# ==========================================
-# CONSULTAR CUENTAS Y SALDOS
-# ==========================================
 
 def obtener_cuentas_con_saldo(conn):
+  import pandas as pd
 
-    consulta = """
-        SELECT
-            c.id,
-            c.nombre,
-            c.tipo,
+  query = """
+        SELECT 
+            c.id, 
+            c.nombre, 
+            c.tipo, 
             c.saldo_inicial,
-            (
-                COALESCE(c.saldo_inicial, 0)
-                +
-                COALESCE(
-                    SUM(
-                        CASE
-                            WHEN LOWER(t.tipo) = 'ingreso'
-                                THEN t.monto
-                            WHEN LOWER(t.tipo) = 'egreso'
-                                THEN -t.monto
-                            ELSE 0
-                        END
-                    ), 0
-                )
-            ) AS saldo
-
+            COALESCE(SUM(CASE WHEN t.tipo = 'Ingreso' THEN t.monto ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN t.tipo = 'Egreso' THEN t.monto ELSE 0 END), 0) as movimiento_neto,
+            (c.saldo_inicial + 
+             COALESCE(SUM(CASE WHEN t.tipo = 'Ingreso' THEN t.monto ELSE 0 END), 0) -
+             COALESCE(SUM(CASE WHEN t.tipo = 'Egreso' THEN t.monto ELSE 0 END), 0)) as saldo
         FROM cuentas c
-
-        LEFT JOIN transacciones t
-            ON c.id = t.cuenta_id
-
-        GROUP BY
-            c.id,
-            c.nombre,
-            c.tipo,
-            c.saldo_inicial
-
-        ORDER BY c.nombre
+        LEFT JOIN transacciones t ON c.id = t.cuenta_id
+        GROUP BY c.id, c.nombre, c.tipo, c.saldo_inicial
+        ORDER BY c.id;
     """
-
-    return pd.read_sql_query(consulta, conn)
+  return pd.read_sql_query(query, conn)
